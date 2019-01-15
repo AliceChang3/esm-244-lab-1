@@ -1,0 +1,170 @@
+---
+title: "Lab 1"
+author: "Alice"
+date: "1/10/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+1. Attach Packages
+
+```{r}
+library(tidyverse)
+library(sf)
+library(leaflet)
+library(tmap)
+```
+2. Review: Reading, exploring, wrangling and visualizing data
+
+a. Read in the Data
+
+```{r}
+
+wine <- read_csv("wine_data.csv")
+
+```
+
+b. wrangling
+```{r}
+
+#Select chooses columns. Can use -select to exclude columns instead. Columns go in the order you write them down after select
+#one equal sign changes name, two equal signs looks for match. Overwrite province to state
+#vertical line means OR. Double == means 'matches'
+#Mutate adds column
+#Arrange sorts in decreasing points per dollar
+
+wine_new <- wine %>% 
+  select(country, province, winery, region_1, points, price) %>%  
+  rename(state = province) %>% 
+  filter(state == "California"|state == "Oregon"|state == "Washington") %>%  
+  mutate(ppd = points/price) %>% 
+  arrange(-ppd)
+
+
+  
+```
+
+c. Use groub_by() and summarize() to find summary statistics by group
+```{r}
+#Grouping data in R's brain and then finding summary statistics. We won't see these groups, but R will be doing it behind the scenes. It will calculate things based on different levels. 
+#R will recognize each unique state and treat them each as seperate groups for following calculations
+#create a data table with mean values of price per dollar based on different group.
+#na.rm = TRUE means remove any NA values that exist
+
+wine_summary <- wine_new %>% 
+  group_by(state) %>% 
+  summarize(
+    mean_ppd = mean(ppd, na.rm = TRUE),
+    max_ppd = max(ppd, na.rm = TRUE)
+  )
+  
+```
+
+d. A few gg-graphics
+
+```{r}
+#Naming things is not necessary but is good practice
+#When we use ggplot we have to tell it 3 things. 1. Tell it we're using GGplot 2. Tell it what data we're using. 3. Tell it what type of plot
+#Histogram doesn't require y
+#piping adds additional functions that operate in function
+#within ggplot we use plus signs to show we're adding additional levels
+#For histograms, we use fill to distinguish colors
+#If we want to do something based on a variable, we have to use aes
+#see that maybe having all wineries seperately doesn't make sense 
+#so we run by state (facet_wrap)
+#By default the scales are the same
+#We can override that by saying scales = "free"
+
+
+wine_hists <- ggplot(wine_new, aes(x=ppd))+
+  geom_histogram(aes(fill=state))+
+  facet_wrap(~state, scales = "free")
+
+#call it
+wine_hists
+
+
+```
+
+new graph: scatterplot graph of price vs. points, with color determined by state, adding a linear model trendline on top of it
+
+```{r}
+
+#geom_point gives scatterplot
+#POINTS USE COLOR, BARS USE BILL, AND COLOR IS THE LINE COLOR
+#If not referencing a variable, put things OUTSIDE of aes
+#Alpha is for transparency
+#You can overlay models over the graph--> geom_smooth
+#If you want to choose colors manually use scale_color_manual
+#You could also do a gradient
+#c stands for combination
+#again, facetwrap is to seperate into seperate graphs each by state
+#we can throw some themes in there
+
+wine_points <- ggplot(wine_new, aes(x=price, y=points)) +
+  geom_point(aes(color = state), alpha = 0.5) +
+  geom_smooth(color = "black", method = "lm", se = FALSE) +
+  scale_color_manual(values = c("royalblue", "mediumorchid1", "orange")) +
+  facet_wrap(~state) +
+  theme_light()
+
+wine_points
+
+```
+
+2. California Counties (spatial data) using sf
+
+```{r}
+
+#st because sf functions will eventually become spatiotemporal functions
+#"." tells it we're already there. It's already in our working directory
+#layer tells it to call all these similarly named things
+
+
+ca_counties <- st_read(dsn = ".", layer = "CA_Counties_TIGER2016" )
+
+ca_land <- ca_counties %>% 
+  select(NAME, ALAND)
+
+#call in income database
+#want to merge these databases through Join function, but first, want to check that the variables are named in ways that match
+#Not just headings but also categories
+
+ca_pop_inc <- read_csv("ca_pop_inc.csv") %>% 
+  rename(NAME=COUNTY)
+
+#full join is your safest bet because it keeps every row even if it doesn't have a match in the other dataframe
+ca_df <- full_join(ca_land, ca_pop_inc) %>% 
+  select(NAME, MedFamilyIncome) #remember geometries are sticky
+
+
+#plot(ca_counties)
+#above is commented out because it takes a long time to load
+
+#sf uses sticky geometries. Means you don't have to worry about dealing with the geometry. It just stays there
+```
+
+d. Use geom_sf to make a map in ggplot
+
+```{r}
+
+ca_income <- ggplot(ca_df) +
+  geom_sf(aes(fill = MedFamilyIncome))
+
+ca_income
+
+#we need data to match the coordinate system
+
+ca_df_transform <- st_transform(ca_df, crs = 4326)
+
+leaflet(ca_df_transform) %>% 
+  addTiles() %>% 
+  addPolygons()
+
+#Creates INTERACTIVE MAP!
+
+```
+
